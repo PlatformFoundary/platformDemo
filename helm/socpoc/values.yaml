@@ -1,0 +1,91 @@
+# -- Global settings ----------------------------------------------------------
+global:
+  # ACR login server, e.g. acrprod1234.azurecr.io
+  # Injected at deploy time: --set global.imageRegistry=<acr-login-server>
+  imageRegistry: ""
+
+# -- Frontend (React / nginx) -------------------------------------------------
+frontend:
+  image:
+    repository: frontend   # prefixed with global.imageRegistry at deploy time
+    tag: latest
+    pullPolicy: Always
+
+  replicaCount: 2
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+# -- Backend (Node.js / Express) ----------------------------------------------
+backend:
+  image:
+    repository: backend   # prefixed with global.imageRegistry at deploy time
+    tag: latest
+    pullPolicy: Always
+
+  replicaCount: 2
+
+  service:
+    type: ClusterIP
+    port: 3001
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+  # Non-sensitive DB configuration; DB_PASSWORD comes from the referenced secret
+  env:
+    DB_HOST: ""        # e.g. <server>.postgres.database.azure.com
+    DB_PORT: "5432"
+    DB_NAME: "tododb"
+    DB_USER: ""        # e.g. adminuser
+
+  # Existing Kubernetes Secret holding the DB password
+  # Create with: kubectl create secret generic backend-db-secret --from-literal=db-password=<pw>
+  dbPasswordSecret:
+    name: backend-db-secret
+    key: db-password
+
+# -- Ingress ------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  host: app.20.10.77.250.nip.io
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  tls:
+    - secretName: socpoc-tls
+      hosts:
+        - app.20.10.77.250.nip.io
+
+# -- Image pull secret (set if ACR uses workload identity / pull secret) ------
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
