@@ -1,0 +1,12 @@
+# HelmRepository pointing to ACR OCI registry for the socpoc chart
+apiVersion: source.toolkit.fluxcd.io/v1beta2
+kind: HelmRepository
+metadata:
+  name: socpoc-acr
+  namespace: socpoc
+spec:
+  type: oci
+  interval: 1h
+  url: oci://acrsocintpocdemou7yl.azurecr.io/helm
+  secretRef:
+    name: acr-helm-secret
