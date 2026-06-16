@@ -1,0 +1,159 @@
+name: CI – Build, Push Images & Helm Chart to ACR
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "helm/**"
+      - "frontend/**"
+      - "backend/**"
+  pull_request:
+    branches: [main]
+    paths:
+      - "helm/**"
+      - "frontend/**"
+      - "backend/**"
+  workflow_dispatch:
+    inputs:
+      chart_version:
+        description: "Override chart version (leave blank to use Chart.yaml value)"
+        required: false
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  CHART_PATH: helm/socpoc
+  ACR_HELM_REPO: helm
+  ACR_LOGIN_SERVER: acrsocintpocdemou7yl.azurecr.io
+  ACR_SERVER: acrsocintpocdemou7yl
+
+jobs:
+  sonarcloud:
+    name: SonarCloud Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # shallow clones disabled for better relevancy of analysis
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.organization=sonarterst
+            -Dsonar.projectKey=sonarterst_socintpoc
+
+  build-and-publish:
+    name: Build, Push Images & Helm Chart
+    runs-on: ubuntu-latest
+    needs: sonarcloud
+    environment: Demo
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect helm chart changes
+        id: helm_changed
+        run: |
+          if git diff --name-only HEAD~1 HEAD | grep -q '^helm/'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Helm
+        if: steps.helm_changed.outputs.changed == 'true'
+        uses: azure/setup-helm@v4
+        with:
+          version: "3.14.0"
+
+      - name: Lint chart
+        if: steps.helm_changed.outputs.changed == 'true'
+        run: helm lint ${{ env.CHART_PATH }} --strict
+
+      # ── Azure login (OIDC) ────────────────────────────────────────────────
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      # The ACR is private – temporarily allow the runner's public IP
+      - name: Allow runner IP on ACR network rules
+        run: |
+          PUBLIC_IP=$(curl -s https://api.ipify.org)
+          echo "RUNNER_PUBLIC_IP=$PUBLIC_IP" >> "$GITHUB_ENV"
+          az acr network-rule add \
+            --name "${{ env.ACR_SERVER }}" \
+            --ip-address "$PUBLIC_IP" \
+            --output none
+          sleep 15
+
+      # ── Docker login (native) ─────────────────────────────────────────────
+      - name: Log in to ACR (Docker)
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # ── Build & push application images ───────────────────────────────────
+      - name: Build & push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/frontend:${{ github.sha }}
+            ${{ env.ACR_LOGIN_SERVER }}/frontend:latest
+
+      - name: Build & push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ env.ACR_LOGIN_SERVER }}/backend:${{ github.sha }}
+            ${{ env.ACR_LOGIN_SERVER }}/backend:latest
+
+      # ── Helm chart – only when helm/** changed ────────────────────────────
+      - name: Resolve chart version
+        id: chart_version
+        if: steps.helm_changed.outputs.changed == 'true'
+        run: |
+          if [[ -n "${{ inputs.chart_version }}" ]]; then
+            VERSION="${{ inputs.chart_version }}"
+          else
+            VERSION=$(grep '^version:' ${{ env.CHART_PATH }}/Chart.yaml | awk '{print $2}')
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Package chart
+        if: steps.helm_changed.outputs.changed == 'true'
+        run: |
+          helm package ${{ env.CHART_PATH }} \
+            --version "${{ steps.chart_version.outputs.version }}" \
+            --destination /tmp/helm-packages
+
+      - name: Push chart to ACR
+        if: steps.helm_changed.outputs.changed == 'true'
+        run: |
+          helm push /tmp/helm-packages/socpoc-${{ steps.chart_version.outputs.version }}.tgz \
+            oci://${{ env.ACR_LOGIN_SERVER }}/${{ env.ACR_HELM_REPO }}
+
+      # ── Cleanup – always remove the runner IP rule ─────────────────────────
+      - name: Remove runner IP from ACR network rules
+        if: always()
+        run: |
+          az acr network-rule remove \
+            --name "${{ env.ACR_SERVER }}" \
+            --ip-address "${{ env.RUNNER_PUBLIC_IP }}" \
+            --output none || true
