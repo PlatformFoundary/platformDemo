@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - flux-system/
   - ks-base-infra.yaml
+  - ks-cluster-issuers.yaml
