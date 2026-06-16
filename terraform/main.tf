@@ -97,3 +97,23 @@ module "flux" {
 
   depends_on = [module.aks]
 }
+
+# ── Database ──────────────────────────────────────────────────────────────────
+module "database" {
+  source = "./modules/database"
+
+  resource_group_name = azurerm_resource_group.main.name
+  location            = var.location
+  prefix              = local.prefix
+  tags                = local.tags
+  subnet_id           = module.networking.subnet_db_id
+  private_dns_zone_id = module.networking.postgres_private_dns_zone_id
+  admin_username      = var.db_admin_username
+  sku_name            = var.db_sku_name
+  storage_mb          = var.db_storage_mb
+  postgres_version    = var.db_postgres_version
+  key_vault_id        = module.keyvault.vault_id
+
+  # Ensure the private DNS VNet link exists before the server is provisioned
+  depends_on = [module.networking, module.keyvault]
+}
