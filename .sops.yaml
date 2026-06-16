@@ -1,0 +1,4 @@
+creation_rules:
+  - path_regex: .*.yaml
+    encrypted_regex: ^(data|stringData|github_token|password|account_key)$
+    azure_keyvault: "https://kv-socintpoc-demo.vault.azure.net/keys/socintpoc/4515b93353484f89a25c4adb81026f7a"

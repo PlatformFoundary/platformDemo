@@ -1,0 +1,9 @@
+output "vnet_id" { value = azurerm_virtual_network.main.id }
+output "vnet_name" { value = azurerm_virtual_network.main.name }
+output "subnet_aks_id" { value = azurerm_subnet.aks.id }
+output "subnet_db_id" { value = azurerm_subnet.db.id }
+output "subnet_endpoints_id" { value = azurerm_subnet.endpoints.id }
+output "acr_private_dns_zone_id" { value = azurerm_private_dns_zone.acr.id }
+output "keyvault_private_dns_zone_id" { value = azurerm_private_dns_zone.keyvault.id }
+output "postgres_private_dns_zone_id" { value = azurerm_private_dns_zone.postgres.id }
+output "nat_gateway_public_ip" { value = azurerm_public_ip.nat.ip_address }
