@@ -1,0 +1,54 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: socpoc
+  namespace: socpoc
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: socpoc
+      version: "0.2.0"
+      sourceRef:
+        kind: HelmRepository
+        name: socpoc-acr
+        namespace: socpoc
+      interval: 1h
+  values:
+    global:
+      imageRegistry: acrsocintpocdemou7yl.azurecr.io
+
+    imagePullSecrets:
+      - name: acr-pull-secret
+
+    frontend:
+      image:
+        tag: latest
+        pullPolicy: Always
+      replicaCount: 2
+
+    backend:
+      image:
+        tag: latest
+        pullPolicy: Always
+      replicaCount: 2
+      env:
+        DB_HOST: psql-socintpoc-demo.postgres.database.azure.com
+        DB_PORT: "5432"
+        DB_NAME: tododb
+        DB_USER: pgadmin
+      dbPasswordSecret:
+        name: backend-db-secret
+        key: db-password
+
+    ingress:
+      enabled: true
+      className: nginx
+      host: app.172.193.30.158.nip.io
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+      tls:
+        - secretName: socpoc-tls
+          hosts:
+            - app.172.193.30.158.nip.io
