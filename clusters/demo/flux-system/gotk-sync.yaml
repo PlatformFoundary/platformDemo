@@ -11,7 +11,7 @@ spec:
     branch: main
   secretRef:
     name: ssh-credentials
-  url: https://github.com/PlatformFoundary/platformDemo.git
+  url: ssh://git@github.com/PlatformFoundary/platformDemo.git
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
